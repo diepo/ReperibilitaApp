@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Rete: lettura calendario da SharePoint/Graph, invio mail via Graph, SMTP -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Inoltro chiamata: invio codice USSD -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!--
+         MODIFY_PHONE_STATE e' un permesso signature|privileged: NON puo' essere concesso
+         a un'app normale installata da utente, nemmeno chiedendolo a runtime.
+         E' utilizzabile solo se l'app e':
+           a) installata come app privilegiata di sistema (/system/priv-app) su un device
+              gestito con OS custom/AOSP, oppure
+           b) firmata con la platform key del device, oppure
+           c) il dispositivo e' rooted e si usa "adb shell pm grant" (utile in fase di test).
+         In assenza di queste condizioni il modulo di call forwarding ricade automaticamente
+         sulla strategia "dialer USSD" (ACTION_CALL), che non richiede questo permesso ma non
+         permette di leggere l'esito del comando USSD. Vedi docs/SETUP_DEVICE.md.
+    -->
+    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- SMS di notifica cambio turno -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <!--
+         Permessi per poter diventare l'app Telefono predefinita (RoleManager.ROLE_DIALER):
+         percorso alternativo a MODIFY_PHONE_STATE per inviare USSD senza conferma manuale e
+         senza root, assumendosi pero' la responsabilita' di gestire tutte le chiamate del
+         device incluse quelle di emergenza. Vedi telecom/ReperibilitaInCallService.kt e
+         docs/SETUP_DEVICE.md.
+    -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
+
+    <!-- Riavvio automatico del controllo turni dopo reboot del device -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Worker periodico in foreground (mostra notifica persistente di stato) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <application
+        android:name=".App"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Reperibilita"
+        android:networkSecurityConfig="@xml/network_security_config"
+        tools:targetApi="34">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Reperibilita.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Requisito di idoneita' per RoleManager.ROLE_DIALER: l'app deve gestire
+                 ACTION_DIAL sia generico sia con dati scheme="tel" (un vero dialer deve poter
+                 aprire il tastierino sia vuoto sia precompilato con un numero specifico). Alcuni
+                 controlli di idoneita' (OEM-dipendenti) richiedono entrambe le varianti. -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity>
+
+        <!--
+             Requisito di idoneita' per RoleManager.ROLE_DIALER: l'app deve avere un servizio
+             che implementa InCallService, con questo permesso e intent-filter esatti.
+        -->
+        <service
+            android:name=".telecom.ReperibilitaInCallService"
+            android:permission="android.permission.BIND_INCALL_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+            <meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" />
+        </service>
+
+        <activity
+            android:name=".telecom.InCallActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Reperibilita" />
+
+        <!--
+             Servizio opzionale (l'utente lo attiva a mano da Impostazioni -> Accessibilità):
+             legge il testo dei popup di conferma USSD quando il framework Call/InCallService non
+             li espone (vedi UssdResultAccessibilityService). Non necessario per il funzionamento
+             base dell'app, solo per la verifica automatica dell'esito su alcuni device.
+        -->
+        <service
+            android:name=".telecom.UssdResultAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Callback MSAL per il login interattivo (auth delegata) -->
+        <activity
+            android:name="com.microsoft.identity.client.BrowserTabActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!--
+                     Hash della firma del keystore di DEBUG usato per compilare questo APK
+                     (~/.android/debug.keystore, alias androiddebugkey). Se in futuro l'app viene
+                     firmata con un keystore diverso (release), questo hash e il redirect URI di
+                     default in AppConfig.kt vanno ricalcolati con:
+                     keytool -exportcert -alias <alias> -keystore <path> -storepass <pwd> |
+                       openssl sha1 -binary | openssl base64
+
+                     NOTA: qui sotto l'hash e' in forma NON codificata URL (+ e = letterali),
+                     mentre il redirect URI configurato in AppConfig.kt/Impostazioni/Azure usa la
+                     forma codificata (%2B/%3D). Non e' un errore: Android confronta il path di un
+                     intent-filter dopo averlo decodificato, mentre Entra/MSAL si aspettano il
+                     redirect URI cosi' come registrato (codificato) su Azure.
+                -->
+                <data
+                    android:scheme="msauth"
+                    android:host="it.reperibilita.app"
+                    android:path="/3bjzgvOZp5X2lSTJP40+NMYt58E=" />
+                <!--
+                     Stesso discorso, ma per il keystore di RELEASE (keystore/reperibilita-release.jks,
+                     usato per generare l'AAB caricato su Play Console) - hash calcolato una volta con
+                     lo stesso comando keytool+openssl sopra. Tenuta insieme a quella di debug (invece
+                     di sostituirla) cosi' sia gli APK di debug sideload sia la build release firmata
+                     riescono a completare il login MSAL, a seconda di quale APK e' installato sul
+                     device. Se il keystore di release viene rigenerato, questo valore va ricalcolato.
+                -->
+                <data
+                    android:scheme="msauth"
+                    android:host="it.reperibilita.app"
+                    android:path="/6ek4Sl663E0RgGs3VmHu29uEc3Q=" />
+            </intent-filter>
+        </activity>
+
+        <!--
+             Il servizio interno di WorkManager per setForeground() non dichiara di default un
+             foregroundServiceType: da Android 14 questo fa fallire startForeground() con
+             IllegalArgumentException ("... is not a subset of foregroundServiceType attribute
+             0x00000000..."). Va sovrascritto qui per farlo combaciare con il tipo (dataSync)
+             passato in ScheduleCheckWorker.createForegroundInfo().
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false"
+            tools:node="merge" />
+
+        <receiver
+            android:name=".worker.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge" />
+
+    </application>
+
+</manifest>

@@ -1,0 +1,15 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+
+# Firma release: MAI versionare - perdere il keystore rende impossibile aggiornare l'app una
+# volta pubblicata (Play App Signing puo' aiutare a recuperare, ma e' una procedura di supporto
+# non garantita). Tenerne una copia di backup fuori dal repository.
+keystore.properties
+keystore/*.jks
+keystore/*.keystore
+
+# Log di sessioni di replay/debug locali, non fanno parte del progetto
+replay_pid*.log

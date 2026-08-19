@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reperibilità</string>
+    <string name="notif_channel_service">Servizio controllo turni</string>
+    <string name="notif_channel_service_desc">Notifica persistente del worker di controllo reperibilità</string>
+    <string name="notif_channel_alerts">Avvisi errori reperibilità</string>
+    <string name="notif_channel_alerts_desc">Notifiche locali in caso di errore nel cambio turno</string>
+    <string name="accessibility_service_description">Legge il testo dei popup di conferma mostrati da Android dopo un comando USSD di inoltro chiamata (es. "Inoltro attivato verso..."), per verificare automaticamente che l\'inoltro sia stato impostato correttamente. Non interagisce né modifica nulla sullo schermo: legge solo il testo per registrarlo nel log dell\'app.</string>
+</resources>

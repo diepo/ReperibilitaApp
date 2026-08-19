@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Reperibilita" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+         Tema minimo mostrato dal sistema nell'istante prima che l'Activity carichi (evita il
+         flash bianco/nero all'avvio a freddo). Tenuto volutamente semplice - il vero logo
+         animato con nome, versione e "VnSys" e' un composable Compose (SplashScreen.kt),
+         mostrato subito dopo appena il contenuto e' pronto: la SplashScreen API di sistema non
+         supporta testo/branding personalizzato, solo un'icona e uno sfondo.
+    -->
+    <style name="Theme.Reperibilita.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/primary</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Reperibilita</item>
+    </style>
+</resources>
